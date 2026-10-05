@@ -13,7 +13,7 @@ One shelf read per run:
 | Missing items | No | file name contains `missing` |
 | Items on shelf but marked not in place | No | file name contains `not in place` |
 | Items on shelf but out of range/set | No | file name contains `out of range` |
-| Barcodes with no matched item | No | file name contains `no matched`, `unmatched`, or `not found` |
+| Barcodes with no matched item, including Alma's "Barcodes not in DB list" export | No | file name contains `no matched`, `unmatched`, `not found`, or `not in db` |
 
 Excel lock files (`~$...`) are ignored. If Alma does not produce an unmatched-barcode list, leave that file out.
 
@@ -43,7 +43,7 @@ The places students mark while searching for missing items are in `shelf_report/
 - Unmatched barcodes are noted `Barcode not found`, given a half index, and sent to the cart sheet. Later shelf positions move up so they stay comparable to call-number order.
 - Out-of-range items are noted and kept on the staff report. They do not get a rearrange instruction.
 - Items on the shelf but marked not in place stay on the staff report, with the shelf position filled in. Their Alma status is not a student task.
-- Call-number order follows Alma's normalized call number. Descriptions like `v.1`, `v.2`, `v.10`, and `Bd.1` are ordered numerically inside that call number. Other descriptions stay in the analytic's export order.
+- Call-number order follows Alma's normalized call number. Descriptions like `v.2`, `v.10`, `Bd.2`, `t.2`, `no.2`, and `issue 2` are ordered numerically inside that call number. The same rule covers `tom.`, `tome`, `pt.`, `part`, `teil`, `fasc.`, `heft`, and a leading `nr.`. A newspaper line that only contains `no.` later, such as `82nd no.193`, stays in the analytic's export order.
 - The first and last items use "Before" and "After" instead of the old formula, which quoted the column headings.
 
 The order check is still approximate. Read the out-of-order sheet before giving the workbook to students.

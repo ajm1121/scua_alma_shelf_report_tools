@@ -13,9 +13,43 @@ ISSUE_DUPLICATE = "Duplicate barcode on shelf read"
 ISSUE_NOT_IN_ANALYTIC = "Not in shelf read analytic"
 ISSUE_NOT_IN_PLACE = "Marked not in place"
 
-# Volume, Bd., and similar enumerations. "no. 193" is left alone so newspaper
-# descriptions stay in the order Analytics exported.
-VOLUME_DESCRIPTION = re.compile(r"(?i)(?:^|\s)(?:v|vol|bd|band)\.?\s*\d")
+# Enumeration prefixes that should sort 2 before 10. Longer forms are listed
+# first so "tome" is not mistaken for a bare "t". These may appear after a
+# series label, as in "n.s. v.10".
+VOLUME_MARKERS = (
+    "tome",
+    "teil",
+    "band",
+    "heft",
+    "fasc",
+    "part",
+    "vol",
+    "tom",
+    "bd",
+    "pt",
+    "tl",
+    "v",
+    "t",
+)
+# These count only at the start of a description. Matching "no." anywhere
+# would also catch newspaper lines such as "82nd no.193" and reorder the group.
+LEADING_VOLUME_MARKERS = (
+    "issue",
+    "issues",
+    "no",
+    "nr",
+)
+VOLUME_DESCRIPTION = re.compile(
+    r"(?i)(?:^|\s)(?:" + "|".join(VOLUME_MARKERS) + r")\.?\s*\d"
+)
+LEADING_VOLUME_DESCRIPTION = re.compile(
+    r"(?i)^\s*(?:" + "|".join(LEADING_VOLUME_MARKERS) + r")\.?\s*\d"
+)
+
+
+def is_volume_description(text: str) -> bool:
+    value = text or ""
+    return bool(VOLUME_DESCRIPTION.search(value) or LEADING_VOLUME_DESCRIPTION.search(value))
 
 
 @dataclass
@@ -195,20 +229,31 @@ def _apply_analytic_row(item: ShelfItem, row: dict[str, str], row_number: int) -
 
 
 def _adjust_shelf_indexes(items: list[ShelfItem]) -> None:
-    """File unmatched barcodes between their neighbors, matching the template macro.
+    """File unmatched barcodes between their neighbors.
 
-    A barcode Alma cannot match is given a half index, and every later shelf
-    position moves up by one. Matched items then stay on the same 1..n scale
-    as the analytic index.
+    Matched items are renumbered 1..n in shelf order so they stay on the same
+    scale as the analytic index. Each unmatched barcode gets a fractional index
+    in the gap where it was scanned. A single barcode lands on .5. Several in a
+    row stay in shelf order, as .25, .5, .75, and so on.
     """
     items.sort(key=lambda item: (item.original_index, item.barcode))
-    skipped = 0
+    matched_rank = 0
+    pending: list[ShelfItem] = []
+
+    def place_pending(before_rank: int) -> None:
+        count = len(pending)
+        for offset, unmatched in enumerate(pending, start=1):
+            unmatched.shelf_index = (before_rank - 1) + offset / (count + 1)
+        pending.clear()
+
     for item in items:
         if item.barcode_not_found:
-            item.shelf_index = item.original_index - skipped - 0.5
-            skipped += 1
-        else:
-            item.shelf_index = item.original_index - skipped
+            pending.append(item)
+            continue
+        matched_rank += 1
+        place_pending(matched_rank)
+        item.shelf_index = float(matched_rank)
+    place_pending(matched_rank + 1)
 
 
 def _assign_analytic_indexes(items: list[ShelfItem]) -> None:
@@ -216,7 +261,7 @@ def _assign_analytic_indexes(items: list[ShelfItem]) -> None:
     volume_groups = {
         item.normalized_call_number
         for item in matched
-        if VOLUME_DESCRIPTION.search(item.description or "")
+        if is_volume_description(item.description or "")
     }
     matched.sort(
         key=lambda item: (

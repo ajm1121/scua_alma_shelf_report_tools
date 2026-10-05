@@ -41,6 +41,8 @@ def classify_input(path: Path) -> str | None:
         "unmatched",
         "not found",
         "not_found",
+        "not in db",
+        "not_in_db",
         "no item",
         "no_item",
     )

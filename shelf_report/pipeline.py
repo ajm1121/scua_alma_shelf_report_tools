@@ -186,14 +186,22 @@ def _load_alma(paths: list[Path]) -> list[dict[str, str]]:
     records = []
     for path in paths:
         _headers, rows = read_xlsx_table(path)
-        if rows and "Barcode" not in rows[0] and not any("Barcode" in row for row in rows):
-            raise InputError(f"{path.name} looks like an Alma export but has no Barcode column.")
+        if rows and not any(_record_barcode(row) for row in rows):
+            raise InputError(f"{path.name} has no Barcode or Barcodes column.")
         records.extend(rows)
     return records
 
 
+def _record_barcode(record: dict[str, str]) -> str:
+    """Alma's full export uses Barcode. The unmatched-barcode list uses Barcodes."""
+    for key in ("Barcode", "Barcodes"):
+        if record.get(key):
+            return record[key]
+    return ""
+
+
 def _barcodes(records: list[dict[str, str]]) -> set[str]:
-    return {normalize_barcode(record.get("Barcode")) for record in records if record.get("Barcode")}
+    return {normalize_barcode(barcode) for record in records if (barcode := _record_barcode(record))}
 
 
 def _project_name(raw_path: Path) -> str:
@@ -262,7 +270,7 @@ def _summary(
         details.append((
             "How the order check was built",
             "Analytic index follows the normalized call number. Within one call number, "
-            "descriptions such as v.1, v.2, v.10 are put in numeric order. Other descriptions "
+            "descriptions such as v.2, v.10, Bd.2, t.2, no.2, and issue 2 are put in numeric order. Other descriptions "
             "stay in the analytic's export order. A row is listed for students when its shelf "
             f"index and analytic index differ by more than {threshold}. Out-of-range items "
             "keep their call numbers, and they do not get a rearrange instruction.",

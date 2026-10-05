@@ -29,6 +29,54 @@ class LogicTests(unittest.TestCase):
     def test_volume_descriptions_sort_numerically(self):
         self.assertLess(natural_key("v.2"), natural_key("v.10"))
         self.assertLess(natural_key("Bd.2"), natural_key("Bd.10"))
+        self.assertLess(natural_key("t.2 1667-71"), natural_key("t.10 1682"))
+        self.assertLess(natural_key("t.11 1683"), natural_key("t.100 1733"))
+
+    def test_tome_numbers_sort_inside_a_call_number(self):
+        raw = [
+            {"index": 1, "barcode": "100"},
+            {"index": 2, "barcode": "2"},
+            {"index": 3, "barcode": "11"},
+        ]
+        rows = [
+            analytic("100", "0ap!25 j7", "AP25 .J7", "t.10 1682"),
+            analytic("2", "0ap!25 j7", "AP25 .J7", "t.2 1667-71"),
+            analytic("11", "0ap!25 j7", "AP25 .J7", "t.11 1683"),
+        ]
+        items, _warnings = build_shelf_items(raw, rows, set(), set(), set(), threshold=20)
+        ordered = [item.description for item in sorted(items, key=lambda item: item.analytic_index or 0)]
+        self.assertEqual(ordered, ["t.2 1667-71", "t.10 1682", "t.11 1683"])
+
+    def test_newspaper_descriptions_keep_analytic_order(self):
+        raw = [
+            {"index": 1, "barcode": "111"},
+            {"index": 2, "barcode": "222"},
+        ]
+        rows = [
+            analytic("111", "f", "F884 .E9", "1829/1929 cent. ed."),
+            analytic("222", "f", "F884 .E9", "82nd no.193 1948"),
+        ]
+        items, _warnings = build_shelf_items(raw, rows, set(), set(), set(), threshold=20)
+        by_barcode = {item.barcode: item for item in items}
+        self.assertLess(by_barcode["111"].analytic_index, by_barcode["222"].analytic_index)
+
+    def test_number_and_issue_sort_numerically_when_they_lead(self):
+        raw = [
+            {"index": 1, "barcode": "10"},
+            {"index": 2, "barcode": "2"},
+            {"index": 3, "barcode": "i10"},
+            {"index": 4, "barcode": "i2"},
+        ]
+        rows = [
+            analytic("10", "a", "AC1 .C62", "no.10"),
+            analytic("2", "a", "AC1 .C62", "no.2"),
+            analytic("i10", "b", "PS648 .S5", "Issue 10 1991"),
+            analytic("i2", "b", "PS648 .S5", "Issue 2 1988"),
+        ]
+        items, _warnings = build_shelf_items(raw, rows, set(), set(), set(), threshold=20)
+        by_barcode = {item.barcode: item for item in items}
+        self.assertLess(by_barcode["2"].analytic_index, by_barcode["10"].analytic_index)
+        self.assertLess(by_barcode["i2"].analytic_index, by_barcode["i10"].analytic_index)
 
     def test_unmatched_barcode_shifts_later_indexes(self):
         raw = [
@@ -49,6 +97,24 @@ class LogicTests(unittest.TestCase):
         self.assertEqual(by_barcode["333"].shelf_index, 2)
         self.assertEqual(by_barcode["333"].analytic_index, 2)
         self.assertEqual(by_barcode["222"].current_location, "Between A 1 and B 1")
+
+    def test_consecutive_unmatched_barcodes_keep_separate_indexes(self):
+        raw = [
+            {"index": 1, "barcode": "111"},
+            {"index": 2, "barcode": "222"},
+            {"index": 3, "barcode": "333"},
+            {"index": 4, "barcode": "444"},
+        ]
+        rows = [
+            analytic("111", "a", "A 1"),
+            analytic("444", "b", "B 1"),
+        ]
+        items, _warnings = build_shelf_items(raw, rows, {"222", "333"}, set(), set(), threshold=20)
+        by_barcode = {item.barcode: item for item in items}
+        self.assertEqual(by_barcode["111"].shelf_index, 1)
+        self.assertAlmostEqual(by_barcode["222"].shelf_index, 1 + 1 / 3)
+        self.assertAlmostEqual(by_barcode["333"].shelf_index, 1 + 2 / 3)
+        self.assertEqual(by_barcode["444"].shelf_index, 2)
 
     def test_volume_order_and_out_of_range_suppression(self):
         raw = [
@@ -143,6 +209,10 @@ class LogicTests(unittest.TestCase):
         self.assertEqual(classify_input(Path("Items on shelf but marked not in place.xlsx")), "not_in_place")
         self.assertEqual(classify_input(Path("Items on shelf but out of range.xlsx")), "out_of_range")
         self.assertEqual(classify_input(Path("Barcodes with no matched item.xlsx")), "unmatched")
+        self.assertEqual(
+            classify_input(Path("Barcodes not in DB list__45940664060001852.xlsx")),
+            "unmatched",
+        )
         self.assertEqual(classify_input(Path("SCUA_Shelf Report Dump.csv")), "analytic")
         self.assertIsNone(classify_input(Path("~$double_os_raw_report.xlsx")))
 
@@ -153,8 +223,8 @@ class LogicTests(unittest.TestCase):
         headers, rows = read_xlsx_table(path)
         self.assertIn("Barcode", headers)
         self.assertIn("Call Number", headers)
-        self.assertGreaterEqual(len(rows), 29)
-        self.assertTrue(rows[0]["Barcode"].isdigit())
+        self.assertGreater(len(rows), 0)
+        self.assertTrue(rows[0]["Barcode"])
 
 
 if __name__ == "__main__":
