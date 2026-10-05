@@ -218,3 +218,13 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Shelf-read spreadsheets, analytic exports, and Excel lock files
+output/
+~$*
+*.xlsx
+*.xlsm
+*.xls
+*.xlsb
+*.ods
+*.csv

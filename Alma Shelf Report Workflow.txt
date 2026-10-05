@@ -1,0 +1,113 @@
+Automated path
+Put one shelf read in the input folder, run the Alma shelf report, and save these files there too:
+
+- The raw shelf read (Index and Barcode columns; include "raw" in the file name)
+- Missing items
+- Items on shelf but marked not in place
+- Items on shelf but out of range/set
+- Barcodes with no matched item, when Alma produces that list. Leave it out when there are none.
+- The shelf read dump analytic, exported as CSV
+
+Then, from this folder, run:
+
+    python process_shelf_report.py
+
+The script writes output\<project>_staff_report.xlsx and output\<project>_student_workbook.xlsx.
+It marks barcode-not-found and out-of-range items, files unmatched barcodes on a half index,
+compares shelf position with call-number position, and builds the student sheets.
+Review the Possibly out of order sheet before handing the workbook to students.
+The order check is still approximate. Use --threshold 10 if you want the tighter template cutoff
+instead of the written cutoff of 20.
+
+The notes below are the manual version of the same work.
+
+
+Requires a spreadsheet of barcodes for a given call number range in a given location.  For basic instructions, see https://knowledge.exlibrisgroup.com/Alma/Product_Documentation/010Alma_Online_Help_(English)/Physical_Resource_Management/016Managing_Physical_Resources/Managing_Physical_Item_Inventory_Using_Shelf_Reporting
+
+What to do with the raw shelf read form 
+1) Create a backup copy just in case.
+2) Check it for duplicate barcodes/bad barcodes and fix or delete. 
+	-2a (optional)) Clump the spreadsheets so you don't have to run as many jobs.  Max reasonable sheet is around 8000 rows.
+3) Create an index column corresponding to position on the shelf.
+4) Figure out the first and last call numbers so you can set them as the to and froms for the range in the shelf report.
+5) Paste the barcode values alone into a separate workbook, save it (desktop working folder, can be purged after the run) and run spreadsheet through the Shelf Report job (Resources-Shelf Report).
+
+Use the Staff Shelf Report template to create the final report form.  Copy and paste the index and barcode column data into this report.
+
+What to do with the Alma report (follow this order, even though it is different from the Alma display):
+
+-Items in Place: 
+	Ignore this sub-report.  These are items in place that Alma expected to be in place.
+-Missing items but marked in place: 
+	1) Export these items (as a set if there are more than 50) and use the shelf read dump analytic to add these as a separate sheet on the shelf read spreadsheet.  This will be used to scan for them later.
+	2) Use a change physical items job to mark all of these missing.
+-Items on shelf but marked not in place:
+	1) These can include missing, work order and any other not in place statuses.  The Cancel Requests and Reshelve Postman collection can fix work order and request issues, and the change physical items job can remove missing statuses.  It may also make sense to have the work orders and transit issues pulled so that existence on the shelf can be verified. 
+-Known items not in place: 
+	Ignore this sub-report.  These are items that are marked as being not in place and are not in place.
+-Barcodes with no matched item:
+	1) Download the list.
+	2) Find the corresponding barcodes on the shelf read spreadsheet and mark them in the Notes column as "Barcode not found" so they can be removed for sorting purposes (paste Barcodes below last value in Barcode column - Highlight cell rules, duplicate values - If there are a lot of non-matched barcodes, Sort only shelf read values by Barcode/cell color) - Add note - resort).  
+	Change the shelf position index to something that will file between the upper and lower row (like 171.5) and adjust the other index numbers accordingly (Identify indexes for Barcode not found and save somewhere - ctrl-G to find index rows for each - adjust the index number and the subsequent two indices and then paste down to reset the index numbers below; UPDATE: this can be done with a Macro built into the staff shelf report template.  Open the template to access the macro.  See Appendix A).  This will allow for better matching of locations later.
+-Items on shelf but out of range/set: These are items that are out of place based on the given range
+	Export the items and locate them on the shelf read spreadsheet (paste Barcodes below last value in Barcode column - Highlight cell rules, duplicate values - Sort only shelf read values by Barcode/cell color) - Add note - resort).  Mark them in the Notes column as "Item on shelf but out of range/set" for tracking later.
+
+
+Use the shelf read dump analytic to determine if items are out of call number order:
+	1) Filter out the "Barcode not found" barcodes and then copy and paste the remaining barcodes into the filter of the Shelf Read Dump Analytic (note: max number of barcodes that can be filtered on is currently 9999).  Also filter to Physical Item Details-Lifecycle=Active.  Export those results from Analytics as Excel Data.  
+		a) Double check that the number of rows matches the shelf read report.  Items seem to drop out sometimes (not sure why).  Look up barcodes that did not appear and manually add them to the shelf read dump so every item from the report is represented.
+		b) Do a quick scan to correct any call number sorting issues with serials (e.g., v.1, v.10, v.2,...).  Once you like the look of the report, add an index column and paste down.  Then sort everything by barcode. [UPDATE: The sort_serials Python tool (C:\Users\amunsell\Desktop\sort_serials) can do a decent rough sort.  It still needs to be tweaked to handle descriptions that start Bd.]
+	2) On the shelf read form, move the identified "Barcode not found" items out and sort everything else by barcode.  
+	3) Copy and paste the sorted analytic into the shelf read form so that the barcodes match up in each row.  The Index columns now give you a shelf position and arranged call number position for each item.  To double check that all is well, check that the barcodes on each row match (you can use an IF formula if you are really concerned).
+	4)Resort the entire sheet by index to reintegrate the Barcode not found items.
+
+When sorted by shelf index, you can set up a Current Location for each item by using the formula below and pasting down the cell values (so it sticks when you resort):	
+="Between " & I1 & " " & J1 & " and " & I3 & " " & J3
+
+Now sort by Analytic Index and then run this Magic Formula for checking if index is more than 20 positions out of place:
+=IF(ABS(A2-G2)<=20,"","Rearrange, should go between " & I1 & " " & J1 & " and " & I3 & " " & J3)
+
+Paste down the cell values to lock in place.  Filter the blanks and delete them.  Now you should be able to do whatever with the results.  Rearranging by shelf index can be a good way to go over things before exporting to a student workbook.  It is also a good idea to go through and remove any rearrange instructions from items that were out of range/set because those items don't belong there anyway.
+
+NOTE: the order check formula is imperfect, and should be gone over before turning over to students to rearrange.
+
+[Need to add instructions for creating the student cleanup workbook]
+
+APPENDIX A: Macro to adjust index numbers for barcodes not found in Alma
+Sub barcode_not_found()
+'
+' barcode_not_found Macro
+' Select the cell two columns right (C for A) and run.
+'
+
+'
+    ActiveCell.Select
+    ActiveCell.FormulaR1C1 = "=RC[-2]-0.5"
+    ActiveCell.Select
+    Selection.Copy
+    ActiveCell.Offset(0, -2).Range("A1").Select
+    Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks _
+        :=False, Transpose:=False
+    ActiveCell.Offset(1, 0).Range("A1").Select
+    Application.CutCopyMode = False
+    ActiveCell.FormulaR1C1 = "=R[-1]C+0.5"
+    ActiveCell.Offset(1, 0).Range("A1").Select
+    ActiveCell.FormulaR1C1 = "=R[-1]C+1"
+    ActiveCell.Offset(-1, 0).Range("A1:A2").Select
+    Selection.Copy
+    Selection.PasteSpecial Paste:=xlPasteValues, Operation:=xlNone, SkipBlanks _
+        :=False, Transpose:=False
+    ActiveCell.Offset(1, 0).Range("A1").Select
+    Application.CutCopyMode = False
+    ActiveCell.Offset(-1, 0).Range("A1:A2").Select
+    Application.CutCopyMode = False
+    Selection.AutoFill Destination:=ActiveCell.Range("A1:A10000")
+    ActiveCell.Offset(-1, 2).Range("A1").Select
+    Selection = "Barcode not found"
+
+End Sub
+
+
+
+	
+	
